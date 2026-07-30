@@ -114,6 +114,7 @@
 
     // 開始掃描
     function startScan() {
+      isPaused = false;
       html5QrCode = new Html5Qrcode("reader");
       var config = { fps: 10, qrbox: { width: 240, height: 240 } };
 
@@ -144,8 +145,12 @@
       }
     }
 
+    var isPaused = false;
+
     // 掃描成功回呼：解析 JSON 並加入清單
     function onScanSuccess(decodedText) {
+      if (isPaused) return; // 暫停期間忽略任何解碼結果
+
       try {
         var json = extractJson(decodedText);
         var equip = json.EQUIP;
@@ -165,14 +170,33 @@
 
         scanList.push(item);
         renderTable();
-        setStatus('✅ 已加入：' + item.ID + '（共 ' + scanList.length + ' 筆）');
+        setStatus('✅ 已加入：' + item.ID + '（共 ' + scanList.length + ' 筆）暫停中...');
 
         // 簡易震動提示（若裝置支援）
         if (navigator.vibrate) navigator.vibrate(100);
 
+        // 暫停掃描 1.5 秒，避免同一個 QR 被連續重複判讀
+        pauseScanning();
+
       } catch (e) {
         setStatus('⚠️ 無法解析 QR 內容（非有效 JSON）');
       }
+    }
+
+    var SCAN_COOLDOWN_MS = 1500;
+
+    // 暫停掃描一小段時間，時間到自動恢復
+    function pauseScanning() {
+      if (!html5QrCode || !isScanning) return;
+      isPaused = true;
+      html5QrCode.pause(true);
+      setTimeout(function () {
+        isPaused = false;
+        if (html5QrCode && isScanning) {
+          html5QrCode.resume();
+          setStatus('掃描中，請對準下一個 QR Code...');
+        }
+      }, SCAN_COOLDOWN_MS);
     }
 
     // 從掃描到的文字中擷取第一組完整的 {...} JSON 物件再解析，
