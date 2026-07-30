@@ -94,7 +94,7 @@
       <table id="dataTable" style="display:none;">
         <thead>
           <tr>
-            <th>ID</th><th>MAN</th><th>MODNO</th><th>DATE</th><th>SN</th><th></th>
+            <th>ID</th><th>MAN</th><th>MODNO</th><th>MSN</th><th>DATE</th><th></th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -105,7 +105,7 @@
 
   <script>
     // ===== 請改成你部署 GAS 後 拿到的 /exec 網址 =====
-    var GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyH4CdwFX7Jtj4WFDoq0igQGHW97-UZvA_osFRVl1eiZCmMF5SRVIzHPXNj-NBroZZf/exec";
+    var GAS_ENDPOINT = "https://script.google.com/macros/s/xxxxxxxxxxxxxxxxxxxx/exec";
 
     // ===== 全域資料：累積掃描結果 =====
     var scanList = []; // 每筆為 {ID, MAN, MODNO, DATE, SN}
@@ -147,19 +147,20 @@
     // 掃描成功回呼：解析 JSON 並加入清單
     function onScanSuccess(decodedText) {
       try {
-        var json = JSON.parse(decodedText);
+        var json = extractJson(decodedText);
         var equip = json.EQUIP;
         if (!equip) {
           setStatus('⚠️ 格式錯誤：找不到 EQUIP 欄位');
           return;
         }
 
+        // 只擷取需要的 5 個欄位：ID / MAN / MODNO / MSN / DATE
         var item = {
           ID: equip.ID || '',
           MAN: equip.MAN || '',
           MODNO: equip.MODNO || '',
-          DATE: equip.DATE || '',
-          SN: equip.SN || ''
+          MSN: equip.MSN || '',
+          DATE: equip.DATE || ''
         };
 
         scanList.push(item);
@@ -172,6 +173,24 @@
       } catch (e) {
         setStatus('⚠️ 無法解析 QR 內容（非有效 JSON）');
       }
+    }
+
+    // 從掃描到的文字中擷取第一組完整的 {...} JSON 物件再解析，
+    // 避免 QR 內容前後夾雜其他文字（例如結尾多了廠牌名稱）導致 JSON.parse 直接失敗
+    function extractJson(text) {
+      var start = text.indexOf('{');
+      if (start === -1) throw new Error('no json start');
+
+      var depth = 0;
+      for (var i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        if (text[i] === '}') depth--;
+        if (depth === 0) {
+          var jsonStr = text.substring(start, i + 1);
+          return JSON.parse(jsonStr);
+        }
+      }
+      throw new Error('unbalanced braces');
     }
 
     // 掃描失敗（每幀找不到 QR 時會頻繁觸發，故不顯示訊息）
@@ -201,8 +220,8 @@
             '<td>' + escapeHtml(item.ID) + '</td>' +
             '<td>' + escapeHtml(item.MAN) + '</td>' +
             '<td>' + escapeHtml(item.MODNO) + '</td>' +
+            '<td>' + escapeHtml(item.MSN) + '</td>' +
             '<td>' + escapeHtml(item.DATE) + '</td>' +
-            '<td>' + escapeHtml(item.SN) + '</td>' +
             '<td><button class="del-btn" onclick="deleteItem(' + index + ')">刪除</button></td>';
           tbody.appendChild(tr);
         });
