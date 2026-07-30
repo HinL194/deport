@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>QR Code 掃描系統</title>
+  <!-- 引入 html5-qrcode 套件 -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif;
+      margin: 0;
+      padding: 12px;
+      background: #f5f6f8;
+      color: #222;
+    }
+    h2 { font-size: 18px; margin: 4px 0 12px; }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    #reader {
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    button {
+      font-size: 15px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      width: 100%;
+      margin-top: 6px;
+    }
+    #startBtn { background: #2d7ff9; }
+    #stopBtn { background: #888; }
+    #sendBtn { background: #28a745; }
+    #status { font-size: 13px; color: #666; margin-top: 6px; min-height: 18px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #e0e0e0;
+      padding: 5px 4px;
+      text-align: left;
+      word-break: break-all;
+    }
+    th { background: #f0f2f5; }
+    .del-btn {
+      background: #e74c3c;
+      width: auto;
+      padding: 4px 8px;
+      font-size: 12px;
+      margin: 0;
+    }
+    .count-badge {
+      display: inline-block;
+      background: #2d7ff9;
+      color: #fff;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 13px;
+      margin-left: 6px;
+    }
+    .empty-hint { color: #999; font-size: 13px; padding: 8px 0; text-align: center; }
+  </style>
+</head>
+<body>
+
+  <h2>📷 QR Code 多筆掃描</h2>
+
+  <!-- 掃描區 -->
+  <div class="card">
+    <div id="reader"></div>
+    <button id="startBtn" onclick="startScan()">開始掃描</button>
+    <button id="stopBtn" onclick="stopScan()" style="display:none;">停止掃描</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- 累積清單區 -->
+  <div class="card">
+    <h2>清單 <span class="count-badge" id="countBadge">0</span></h2>
+    <div id="tableWrap">
+      <div class="empty-hint" id="emptyHint">尚未掃描任何項目</div>
+      <table id="dataTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>ID</th><th>MAN</th><th>MODNO</th><th>DATE</th><th>SN</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <button id="sendBtn" onclick="sendAll()">全部發送 (Email)</button>
+  </div>
+
+  <script>
+    // ===== 請改成你部署 GAS 後 拿到的 /exec 網址 =====
+    var GAS_ENDPOINT = "https://script.google.com/macros/s/xxxxxxxxxxxxxxxxxxxx/exec";
+
+    // ===== 全域資料：累積掃描結果 =====
+    var scanList = []; // 每筆為 {ID, MAN, MODNO, DATE, SN}
+    var html5QrCode = null;
+    var isScanning = false;
+
+    // 開始掃描
+    function startScan() {
+      html5QrCode = new Html5Qrcode("reader");
+      var config = { fps: 10, qrbox: { width: 240, height: 240 } };
+
+      html5QrCode.start(
+        { facingMode: "environment" }, // 使用後鏡頭
+        config,
+        onScanSuccess,
+        onScanError
+      ).then(function () {
+        isScanning = true;
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'block';
+        setStatus('掃描中，請對準 QR Code...');
+      }).catch(function (err) {
+        setStatus('無法啟動相機：' + err);
+      });
+    }
+
+    // 停止掃描
+    function stopScan() {
+      if (html5QrCode && isScanning) {
+        html5QrCode.stop().then(function () {
+          isScanning = false;
+          document.getElementById('startBtn').style.display = 'block';
+          document.getElementById('stopBtn').style.display = 'none';
+          setStatus('已停止掃描');
+        });
+      }
+    }
+
+    // 掃描成功回呼：解析 JSON 並加入清單
+    function onScanSuccess(decodedText) {
+      try {
+        var json = JSON.parse(decodedText);
+        var equip = json.EQUIP;
+        if (!equip) {
+          setStatus('⚠️ 格式錯誤：找不到 EQUIP 欄位');
+          return;
+        }
+
+        var item = {
+          ID: equip.ID || '',
+          MAN: equip.MAN || '',
+          MODNO: equip.MODNO || '',
+          DATE: equip.DATE || '',
+          SN: equip.SN || ''
+        };
+
+        scanList.push(item);
+        renderTable();
+        setStatus('✅ 已加入：' + item.ID + '（共 ' + scanList.length + ' 筆）');
+
+        // 簡易震動提示（若裝置支援）
+        if (navigator.vibrate) navigator.vibrate(100);
+
+      } catch (e) {
+        setStatus('⚠️ 無法解析 QR 內容（非有效 JSON）');
+      }
+    }
+
+    // 掃描失敗（每幀找不到 QR 時會頻繁觸發，故不顯示訊息）
+    function onScanError(err) {
+      // 靜默處理，避免洗版
+    }
+
+    // 重新渲染清單表格
+    function renderTable() {
+      var tbody = document.getElementById('tableBody');
+      var table = document.getElementById('dataTable');
+      var emptyHint = document.getElementById('emptyHint');
+      var countBadge = document.getElementById('countBadge');
+
+      tbody.innerHTML = '';
+
+      if (scanList.length === 0) {
+        table.style.display = 'none';
+        emptyHint.style.display = 'block';
+      } else {
+        table.style.display = 'table';
+        emptyHint.style.display = 'none';
+
+        scanList.forEach(function (item, index) {
+          var tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td>' + escapeHtml(item.ID) + '</td>' +
+            '<td>' + escapeHtml(item.MAN) + '</td>' +
+            '<td>' + escapeHtml(item.MODNO) + '</td>' +
+            '<td>' + escapeHtml(item.DATE) + '</td>' +
+            '<td>' + escapeHtml(item.SN) + '</td>' +
+            '<td><button class="del-btn" onclick="deleteItem(' + index + ')">刪除</button></td>';
+          tbody.appendChild(tr);
+        });
+      }
+
+      countBadge.textContent = scanList.length;
+    }
+
+    // 刪除單筆項目
+    function deleteItem(index) {
+      scanList.splice(index, 1);
+      renderTable();
+    }
+
+    // 一鍵打包寄信：用 fetch() 呼叫 GAS 的 doPost API
+    function sendAll() {
+      if (scanList.length === 0) {
+        setStatus('⚠️ 清單是空的，沒有資料可以寄送');
+        return;
+      }
+
+      setStatus('📤 寄送中，請稍候...');
+      document.getElementById('sendBtn').disabled = true;
+
+      // 用 text/plain 送出，避免瀏覽器對 GAS 發出 CORS 預檢請求 (OPTIONS)
+      // GAS 不處理 OPTIONS，一定要避免 preflight
+      fetch(GAS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ items: scanList })
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.status === 'success') {
+            setStatus('✅ 寄送成功！清單已清空');
+            scanList = [];
+            renderTable();
+          } else {
+            setStatus('❌ 寄送失敗：' + data.message);
+          }
+          document.getElementById('sendBtn').disabled = false;
+        })
+        .catch(function (err) {
+          setStatus('❌ 網路錯誤：' + err.message);
+          document.getElementById('sendBtn').disabled = false;
+        });
+    }
+
+    // 顯示狀態文字
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    // 簡易 HTML escape，避免特殊字元破壞表格
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
