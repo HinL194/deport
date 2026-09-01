@@ -94,7 +94,7 @@
       <table id="dataTable" style="display:none;">
         <thead>
           <tr>
-            <th>ID</th><th>MAN</th><th>MODNO</th><th>MSN</th><th>DATE</th><th></th>
+            <th>ID</th><th>MAN</th><th>MODNO</th><th>MSN</th><th>DATE</th><th>QR原始內容</th><th></th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -160,12 +160,14 @@
         }
 
         // 只擷取需要的 5 個欄位：ID / MAN / MODNO / MSN / DATE
+        // RAW 保留原始掃描文字，方便日後核對係 QR 本身問題定係解析問題
         var item = {
           ID: equip.ID || '',
           MAN: equip.MAN || '',
           MODNO: equip.MODNO || '',
           MSN: equip.MSN || '',
-          DATE: equip.DATE || ''
+          DATE: equip.DATE || '',
+          RAW: decodedText
         };
 
         scanList.push(item);
@@ -246,6 +248,7 @@
             '<td>' + escapeHtml(item.MODNO) + '</td>' +
             '<td>' + escapeHtml(item.MSN) + '</td>' +
             '<td>' + escapeHtml(item.DATE) + '</td>' +
+            '<td style="max-width:120px; font-size:10px; color:#888;">' + escapeHtml(item.RAW) + '</td>' +
             '<td><button class="del-btn" onclick="deleteItem(' + index + ')">刪除</button></td>';
           tbody.appendChild(tr);
         });
@@ -270,12 +273,13 @@
       setStatus('📤 寄送中，請稍候...');
       document.getElementById('sendBtn').disabled = true;
 
+      var payload = JSON.stringify({ items: scanList });
+
       // 用 text/plain 送出，避免瀏覽器對 GAS 發出 CORS 預檢請求 (OPTIONS)
-      // GAS 不處理 OPTIONS，一定要避免 preflight
       fetch(GAS_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ items: scanList })
+        body: payload
       })
         .then(function (res) { return res.json(); })
         .then(function (data) {
@@ -289,8 +293,26 @@
           document.getElementById('sendBtn').disabled = false;
         })
         .catch(function (err) {
-          setStatus('❌ 網路錯誤：' + err.message);
-          document.getElementById('sendBtn').disabled = false;
+          // 讀取回應失敗（常見於 CORS 被瀏覽器擋住，Safari 會顯示 "Load failed"）
+          // 改用 no-cors 方式再送一次，至少確保請求真的送出去
+          setStatus('⚠️ 無法讀取回應，改用備援方式送出中...');
+          fetch(GAS_ENDPOINT, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: payload
+          })
+            .then(function () {
+              setStatus('📨 已送出（無法確認伺服器結果，請檢查 Email 是否收到）');
+              scanList = [];
+              renderTable();
+            })
+            .catch(function (err2) {
+              setStatus('❌ 完全無法連線：' + err2.message);
+            })
+            .finally(function () {
+              document.getElementById('sendBtn').disabled = false;
+            });
         });
     }
 
