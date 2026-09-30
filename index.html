@@ -109,6 +109,9 @@
     .media-choice label { display: flex; align-items: center; gap: 4px; }
     .media-box { margin-top: 6px; }
     #mPhotoPreview { display: none; max-width: 100%; max-height: 200px; margin-top: 8px; border-radius: 6px; }
+    #mReader { width: 100%; max-width: 400px; margin: 0 auto; }
+    #mScanBtn { background: #2d7ff9; }
+    #mScanStopBtn { background: #888; }
     #mAddBtn { background: #2d7ff9; }
     #mSendBtn { background: #28a745; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -200,6 +203,10 @@
     <!-- 新增記錄 -->
     <div class="card">
       <h2>新增記錄</h2>
+      <div id="mReader"></div>
+      <button id="mScanBtn" onclick="mediaStartScan()">📷 掃描 QR 填入欄位</button>
+      <button id="mScanStopBtn" onclick="mediaStopScan()" style="display:none;">停止掃描</button>
+      <div class="hint">掃描後會自動填入以下欄位，亦可以手動修改</div>
       <div id="mFields"></div>
 
       <span class="field-label">媒體（可選，相片 / 片段擇一）</span>
@@ -491,11 +498,15 @@
     var pendingVideo = null; // 已通過大小檢查、未加入清單嘅片段 (File)
     var mediaRecipientLoaded = false;
     var mediaRecipientEdited = false;
+    var mediaQr = null;          // 媒體分頁自己嘅掃描器（同掃描分頁嘅 html5QrCode 分開）
+    var mediaScanning = false;
+    var mediaScanHandled = false; // 避免同一次掃描觸發多次回呼
 
     // ---------- 分頁切換 ----------
     function switchTab(name) {
       // 離開掃描分頁時關閉相機，避免同媒體分頁嘅拍照/錄影搶用鏡頭
       if (name !== 'scan' && isScanning) stopScan();
+      if (name !== 'media') mediaStopScan();
 
       document.querySelectorAll('.tab-btn').forEach(function (btn) {
         btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
@@ -546,6 +557,56 @@
       return document.querySelector('input[name="mMediaType"]:checked').value;
     }
 
+    // ---------- 掃描 QR 填入欄位 ----------
+    function mediaStartScan() {
+      if (mediaScanning) return;
+      mediaScanHandled = false;
+      mediaQr = new Html5Qrcode('mReader');
+      mediaQr.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        mediaOnScanSuccess,
+        function () { /* 每幀找不到 QR 時觸發，靜默處理 */ }
+      ).then(function () {
+        mediaScanning = true;
+        document.getElementById('mScanBtn').style.display = 'none';
+        document.getElementById('mScanStopBtn').style.display = 'block';
+        setMediaStatus('掃描中，請對準 QR Code...');
+      }).catch(function (err) {
+        setMediaStatus('無法啟動相機：' + err);
+      });
+    }
+
+    function mediaStopScan() {
+      if (!mediaQr || !mediaScanning) return Promise.resolve();
+      return mediaQr.stop().then(function () {
+        mediaScanning = false;
+        document.getElementById('mScanBtn').style.display = 'block';
+        document.getElementById('mScanStopBtn').style.display = 'none';
+      });
+    }
+
+    // 用返掃描分頁嘅 extractJson，同樣讀 EQUIP 入面嘅欄位
+    function mediaOnScanSuccess(decodedText) {
+      if (mediaScanHandled) return;
+      try {
+        var equip = extractJson(decodedText).EQUIP;
+        if (!equip) {
+          setMediaStatus('⚠️ 格式錯誤：找不到 EQUIP 欄位');
+          return;
+        }
+        mediaScanHandled = true;
+        RECORD_FIELDS.forEach(function (f) {
+          document.getElementById('mField_' + f).value = equip[f] || '';
+        });
+        if (navigator.vibrate) navigator.vibrate(100);
+        mediaStopScan();
+        setMediaStatus('✅ 已填入：' + (equip.ID || '') + '，可揀媒體後按「加入清單」');
+      } catch (e) {
+        setMediaStatus('⚠️ 無法解析 QR 內容（非有效 JSON）');
+      }
+    }
+
     function mediaTypeChanged() {
       var type = getMediaType();
       var photoInput = document.getElementById('mPhotoInput');
@@ -557,6 +618,7 @@
       videoInput.disabled = type !== 'video';
 
       // 切換類型時清走另一種已揀嘅檔案，確保一筆記錄最多一份媒體
+      if (type !== 'none') mediaStopScan(); // 釋放鏡頭俾拍照 / 錄影用
       if (type !== 'photo') clearPendingPhoto();
       if (type !== 'video') clearPendingVideo();
     }
