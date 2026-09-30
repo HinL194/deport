@@ -104,6 +104,8 @@
       border-radius: 8px;
     }
     .text-input.invalid { border-color: #e74c3c; }
+    .text-input[readonly] { background: #f0f2f5; color: #555; }
+    #mField_RAW { font-size: 11px; color: #888; resize: vertical; }
     .hint { font-size: 12px; color: #888; margin-top: 4px; }
     .media-choice { display: flex; gap: 16px; font-size: 15px; margin: 4px 0 8px; }
     .media-choice label { display: flex; align-items: center; gap: 4px; }
@@ -196,8 +198,8 @@
     <!-- 收件人 -->
     <div class="card">
       <label class="field-label" for="mRecipient">收件人 Email</label>
-      <input type="text" inputmode="email" id="mRecipient" class="text-input" autocomplete="email" placeholder="name@example.com">
-      <div class="hint">多個地址用逗號分隔；只可以寄去已授權嘅地址，其他地址會被伺服器拒絕</div>
+      <input type="text" inputmode="email" id="mRecipient" class="text-input" autocomplete="email" placeholder="留空寄去預設收件人">
+      <div class="hint">可輸入其他地址（多個用逗號分隔），但必須喺授權清單內，否則會被伺服器拒絕</div>
     </div>
 
     <!-- 新增記錄 -->
@@ -206,7 +208,7 @@
       <div id="mReader"></div>
       <button id="mScanBtn" onclick="mediaStartScan()">📷 掃描 QR 填入欄位</button>
       <button id="mScanStopBtn" onclick="mediaStopScan()" style="display:none;">停止掃描</button>
-      <div class="hint">掃描後會自動填入以下欄位，亦可以手動修改</div>
+      <div class="hint">欄位只可由掃描填入；REMARK 可以人手輸入</div>
       <div id="mFields"></div>
 
       <span class="field-label">媒體（可選，相片 / 片段擇一）</span>
@@ -483,9 +485,6 @@
     // 兩個分頁共用同一組欄位定義，但各自獨立記錄（scanList / mediaList 互不影響）
     var RECORD_FIELDS = ['ID', 'MAN', 'MODNO', 'MSN', 'DATE'];
 
-    // GAS 讀唔到預設收件人時嘅後備值（正常會由 GAS 的 MEDIA_DEFAULT_RECIPIENT 帶入）
-    var MEDIA_FALLBACK_RECIPIENT = '';
-
     var PHOTO_MAX_EDGE = 1280;                 // 最長邊 px
     var PHOTO_QUALITY_STEPS = [0.7, 0.6];      // 先用 0.7，太大再試 0.6
     var PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;   // 壓縮後上限 1.5MB
@@ -496,8 +495,6 @@
     var mediaList = [];
     var pendingPhoto = null; // 已壓縮、未加入清單嘅相片
     var pendingVideo = null; // 已通過大小檢查、未加入清單嘅片段 (File)
-    var mediaRecipientLoaded = false;
-    var mediaRecipientEdited = false;
     var mediaQr = null;          // 媒體分頁自己嘅掃描器（同掃描分頁嘅 html5QrCode 分開）
     var mediaScanning = false;
     var mediaScanHandled = false; // 避免同一次掃描觸發多次回呼
@@ -514,8 +511,6 @@
       document.querySelectorAll('.tab-panel').forEach(function (panel) {
         panel.classList.toggle('active', panel.id === 'tab-' + name);
       });
-
-      if (name === 'media') mediaLoadDefaultRecipient();
     }
 
     // ---------- 初始化 ----------
@@ -525,32 +520,22 @@
       RECORD_FIELDS.forEach(function (f) {
         wrap.insertAdjacentHTML('beforeend',
           '<label class="field-label" for="mField_' + f + '">' + f + '</label>' +
-          '<input type="text" class="text-input" id="mField_' + f + '">');
+          '<input type="text" class="text-input" id="mField_' + f + '" readonly>');
         thead.insertAdjacentHTML('beforeend', '<th>' + f + '</th>');
       });
-      thead.insertAdjacentHTML('beforeend', '<th>媒體</th><th></th>');
+      // 同第一頁一樣保留 QR 原始內容（唯讀），另加可人手輸入嘅 REMARK
+      wrap.insertAdjacentHTML('beforeend',
+        '<label class="field-label" for="mField_RAW">QR原始內容</label>' +
+        '<textarea class="text-input" id="mField_RAW" rows="3" readonly></textarea>' +
+        '<label class="field-label" for="mField_REMARK">REMARK</label>' +
+        '<input type="text" class="text-input" id="mField_REMARK" placeholder="可人手輸入備註">');
+      thead.insertAdjacentHTML('beforeend', '<th>QR原始內容</th><th>REMARK</th><th>媒體</th><th></th>');
 
       var recipient = document.getElementById('mRecipient');
       recipient.addEventListener('input', function () {
-        mediaRecipientEdited = true;
         recipient.classList.remove('invalid');
       });
     })();
-
-    // 預設收件人由 GAS 常數帶入，用戶已手動修改就唔覆蓋
-    function mediaLoadDefaultRecipient() {
-      if (mediaRecipientLoaded) return;
-      mediaRecipientLoaded = true;
-
-      var input = document.getElementById('mRecipient');
-      if (!input.value) input.value = MEDIA_FALLBACK_RECIPIENT;
-
-      postToGas({ mode: 'media', action: 'config' })
-        .then(function (data) {
-          if (!mediaRecipientEdited && data.defaultRecipient) input.value = data.defaultRecipient;
-        })
-        .catch(function () { /* 讀唔到就用後備值，用戶可自行輸入 */ });
-    }
 
     // ---------- 媒體類型（互斥） ----------
     function getMediaType() {
@@ -599,6 +584,7 @@
         RECORD_FIELDS.forEach(function (f) {
           document.getElementById('mField_' + f).value = equip[f] || '';
         });
+        document.getElementById('mField_RAW').value = decodedText;
         if (navigator.vibrate) navigator.vibrate(100);
         mediaStopScan();
         setMediaStatus('✅ 已填入：' + (equip.ID || '') + '，可揀媒體後按「加入清單」');
@@ -723,16 +709,15 @@
 
     // ---------- 加入 / 刪除記錄 ----------
     function mediaAddRecord() {
-      var fields = {};
-      var hasValue = false;
-      RECORD_FIELDS.forEach(function (f) {
-        fields[f] = document.getElementById('mField_' + f).value.trim();
-        if (fields[f]) hasValue = true;
-      });
-      if (!hasValue) {
-        alert('請最少填一個欄位');
+      var raw = document.getElementById('mField_RAW').value;
+      if (!raw) {
+        alert('請先掃描 QR Code');
         return;
       }
+      var fields = {};
+      RECORD_FIELDS.forEach(function (f) {
+        fields[f] = document.getElementById('mField_' + f).value.trim();
+      });
 
       var type = getMediaType();
       if (type === 'photo' && !pendingPhoto) {
@@ -746,6 +731,8 @@
 
       mediaList.push({
         fields: fields,
+        raw: raw,
+        remark: document.getElementById('mField_REMARK').value.trim(),
         mediaType: type,
         photo: type === 'photo' ? pendingPhoto : null,
         video: type === 'video' ? pendingVideo : null,
@@ -753,7 +740,7 @@
       });
 
       // 重置表單，準備輸入下一筆
-      RECORD_FIELDS.forEach(function (f) { document.getElementById('mField_' + f).value = ''; });
+      RECORD_FIELDS.concat(['RAW', 'REMARK']).forEach(function (f) { document.getElementById('mField_' + f).value = ''; });
       document.querySelector('input[name="mMediaType"][value="none"]').checked = true;
       mediaTypeChanged();
 
@@ -780,6 +767,8 @@
 
         var html = '';
         RECORD_FIELDS.forEach(function (f) { html += '<td>' + escapeHtml(item.fields[f]) + '</td>'; });
+        html += '<td style="max-width:120px; font-size:10px; color:#888;">' + escapeHtml(item.raw) + '</td>' +
+          '<td>' + escapeHtml(item.remark) + '</td>';
         html += '<td>' + mediaText + '</td>' +
           '<td><button class="del-btn" onclick="mediaDeleteItem(' + index + ')">刪除</button></td>';
 
@@ -801,7 +790,8 @@
         .map(function (a) { return a.trim(); })
         .filter(function (a) { return a; });
       var recipient = recipientList.join(',');
-      if (recipientList.length === 0 || !recipientList.every(function (a) { return EMAIL_REGEX.test(a); })) {
+      // 留空 = 寄去 GAS 預設收件人
+      if (!recipientList.every(function (a) { return EMAIL_REGEX.test(a); })) {
         recipientInput.classList.add('invalid');
         alert('收件人 Email 格式錯誤，請檢查');
         return;
@@ -843,6 +833,8 @@
           records: mediaList.map(function (r) {
             return {
               fields: r.fields,
+              raw: r.raw,
+              remark: r.remark,
               mediaType: r.mediaType,
               photo: r.mediaType === 'photo' ? { name: r.photo.name, base64: r.photo.base64 } : null,
               videoFileId: r.mediaType === 'video' ? r.videoFileId : null
