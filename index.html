@@ -72,9 +72,89 @@
       margin-left: 6px;
     }
     .empty-hint { color: #999; font-size: 13px; padding: 8px 0; text-align: center; }
+
+    /* ===== 分頁導覽 ===== */
+    .tabs {
+      display: flex;
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: #f5f6f8;
+      padding: 4px 0 8px;
+    }
+    .tab-btn {
+      flex: 1;
+      margin: 0;
+      background: #dfe3ea;
+      color: #333;
+      font-weight: 600;
+    }
+    .tab-btn.active { background: #2d7ff9; color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ===== 媒體上傳分頁 ===== */
+    .field-label { display: block; font-size: 13px; color: #555; margin: 8px 0 4px; }
+    .text-input {
+      width: 100%;
+      font-size: 15px;
+      padding: 8px 10px;
+      border: 1px solid #ccd2da;
+      border-radius: 8px;
+    }
+    .text-input.invalid { border-color: #e74c3c; }
+    .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .media-choice { display: flex; gap: 16px; font-size: 15px; margin: 4px 0 8px; }
+    .media-choice label { display: flex; align-items: center; gap: 4px; }
+    .media-box { margin-top: 6px; }
+    #mPhotoPreview { display: none; max-width: 100%; max-height: 200px; margin-top: 8px; border-radius: 6px; }
+    #mAddBtn { background: #2d7ff9; }
+    #mSendBtn { background: #28a745; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #mStatus { font-size: 13px; color: #666; margin-top: 6px; min-height: 18px; }
+
+    /* ===== 處理中遮罩 ===== */
+    #loadingOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #loadingOverlay.show { display: flex; }
+    .loading-box {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px 24px;
+      max-width: 80%;
+      text-align: center;
+      font-size: 14px;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      margin: 0 auto 10px;
+      border: 4px solid #dfe3ea;
+      border-top-color: #2d7ff9;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
+
+  <!-- 分頁導覽 -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="scan" onclick="switchTab('scan')">掃描記錄</button>
+    <button class="tab-btn" data-tab="media" onclick="switchTab('media')">媒體上傳</button>
+  </div>
+
+  <!-- ===== 分頁一：掃描記錄（原有功能，不變） ===== -->
+  <div class="tab-panel active" id="tab-scan">
 
   <h2>📷 QR Code 多筆掃描</h2>
 
@@ -101,6 +181,66 @@
       </table>
     </div>
     <button id="sendBtn" onclick="sendAll()">全部發送 (Email)</button>
+  </div>
+
+  </div><!-- /#tab-scan -->
+
+  <!-- ===== 分頁二：媒體上傳 ===== -->
+  <div class="tab-panel" id="tab-media">
+
+    <h2>🖼️ 媒體上傳</h2>
+
+    <!-- 收件人 -->
+    <div class="card">
+      <label class="field-label" for="mRecipient">收件人 Email</label>
+      <input type="text" inputmode="email" id="mRecipient" class="text-input" autocomplete="email" placeholder="name@example.com">
+      <div class="hint">多個地址用逗號分隔；只可以寄去已授權嘅地址，其他地址會被伺服器拒絕</div>
+    </div>
+
+    <!-- 新增記錄 -->
+    <div class="card">
+      <h2>新增記錄</h2>
+      <div id="mFields"></div>
+
+      <span class="field-label">媒體（可選，相片 / 片段擇一）</span>
+      <div class="media-choice">
+        <label><input type="radio" name="mMediaType" value="none" checked onchange="mediaTypeChanged()"> 無</label>
+        <label><input type="radio" name="mMediaType" value="photo" onchange="mediaTypeChanged()"> 相片</label>
+        <label><input type="radio" name="mMediaType" value="video" onchange="mediaTypeChanged()"> 片段</label>
+      </div>
+
+      <div class="media-box" id="mPhotoBox" style="display:none;">
+        <input type="file" id="mPhotoInput" accept="image/*" capture="environment" onchange="mediaPhotoSelected(this)" disabled>
+        <img id="mPhotoPreview" alt="相片預覽">
+      </div>
+      <div class="media-box" id="mVideoBox" style="display:none;">
+        <input type="file" id="mVideoInput" accept="video/*" capture="environment" onchange="mediaVideoSelected(this)" disabled>
+      </div>
+      <div class="hint" id="mMediaInfo"></div>
+
+      <button id="mAddBtn" onclick="mediaAddRecord()">加入清單</button>
+    </div>
+
+    <!-- 媒體記錄清單 -->
+    <div class="card">
+      <h2>清單 <span class="count-badge" id="mCountBadge">0</span></h2>
+      <div class="empty-hint" id="mEmptyHint">尚未加入任何記錄</div>
+      <table id="mTable" style="display:none;">
+        <thead><tr id="mTheadRow"></tr></thead>
+        <tbody id="mTbody"></tbody>
+      </table>
+      <button id="mSendBtn" onclick="mediaSendAll()">全部發送 (Email)</button>
+      <div id="mStatus"></div>
+    </div>
+
+  </div><!-- /#tab-media -->
+
+  <!-- 處理中遮罩 -->
+  <div id="loadingOverlay">
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div id="loadingText">處理中...</div>
+    </div>
   </div>
 
   <script>
@@ -328,6 +468,385 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+  </script>
+
+  <!-- ===== 分頁切換 + 媒體上傳分頁 ===== -->
+  <script>
+    // 兩個分頁共用同一組欄位定義，但各自獨立記錄（scanList / mediaList 互不影響）
+    var RECORD_FIELDS = ['ID', 'MAN', 'MODNO', 'MSN', 'DATE'];
+
+    // GAS 讀唔到預設收件人時嘅後備值（正常會由 GAS 的 MEDIA_DEFAULT_RECIPIENT 帶入）
+    var MEDIA_FALLBACK_RECIPIENT = '';
+
+    var PHOTO_MAX_EDGE = 1280;                 // 最長邊 px
+    var PHOTO_QUALITY_STEPS = [0.7, 0.6];      // 先用 0.7，太大再試 0.6
+    var PHOTO_MAX_BYTES = 1.5 * 1024 * 1024;   // 壓縮後上限 1.5MB
+    var VIDEO_MAX_BYTES = 25 * 1024 * 1024;    // 片段上限 25MB
+    var EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    // 每筆為 {fields:{ID,...}, mediaType:'none'|'photo'|'video', photo:{base64,bytes,name}, video:File, videoFileId}
+    var mediaList = [];
+    var pendingPhoto = null; // 已壓縮、未加入清單嘅相片
+    var pendingVideo = null; // 已通過大小檢查、未加入清單嘅片段 (File)
+    var mediaRecipientLoaded = false;
+    var mediaRecipientEdited = false;
+
+    // ---------- 分頁切換 ----------
+    function switchTab(name) {
+      // 離開掃描分頁時關閉相機，避免同媒體分頁嘅拍照/錄影搶用鏡頭
+      if (name !== 'scan' && isScanning) stopScan();
+
+      document.querySelectorAll('.tab-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
+      });
+      document.querySelectorAll('.tab-panel').forEach(function (panel) {
+        panel.classList.toggle('active', panel.id === 'tab-' + name);
+      });
+
+      if (name === 'media') mediaLoadDefaultRecipient();
+    }
+
+    // ---------- 初始化 ----------
+    (function initMediaTab() {
+      var wrap = document.getElementById('mFields');
+      var thead = document.getElementById('mTheadRow');
+      RECORD_FIELDS.forEach(function (f) {
+        wrap.insertAdjacentHTML('beforeend',
+          '<label class="field-label" for="mField_' + f + '">' + f + '</label>' +
+          '<input type="text" class="text-input" id="mField_' + f + '">');
+        thead.insertAdjacentHTML('beforeend', '<th>' + f + '</th>');
+      });
+      thead.insertAdjacentHTML('beforeend', '<th>媒體</th><th></th>');
+
+      var recipient = document.getElementById('mRecipient');
+      recipient.addEventListener('input', function () {
+        mediaRecipientEdited = true;
+        recipient.classList.remove('invalid');
+      });
+    })();
+
+    // 預設收件人由 GAS 常數帶入，用戶已手動修改就唔覆蓋
+    function mediaLoadDefaultRecipient() {
+      if (mediaRecipientLoaded) return;
+      mediaRecipientLoaded = true;
+
+      var input = document.getElementById('mRecipient');
+      if (!input.value) input.value = MEDIA_FALLBACK_RECIPIENT;
+
+      postToGas({ mode: 'media', action: 'config' })
+        .then(function (data) {
+          if (!mediaRecipientEdited && data.defaultRecipient) input.value = data.defaultRecipient;
+        })
+        .catch(function () { /* 讀唔到就用後備值，用戶可自行輸入 */ });
+    }
+
+    // ---------- 媒體類型（互斥） ----------
+    function getMediaType() {
+      return document.querySelector('input[name="mMediaType"]:checked').value;
+    }
+
+    function mediaTypeChanged() {
+      var type = getMediaType();
+      var photoInput = document.getElementById('mPhotoInput');
+      var videoInput = document.getElementById('mVideoInput');
+
+      document.getElementById('mPhotoBox').style.display = type === 'photo' ? 'block' : 'none';
+      document.getElementById('mVideoBox').style.display = type === 'video' ? 'block' : 'none';
+      photoInput.disabled = type !== 'photo';
+      videoInput.disabled = type !== 'video';
+
+      // 切換類型時清走另一種已揀嘅檔案，確保一筆記錄最多一份媒體
+      if (type !== 'photo') clearPendingPhoto();
+      if (type !== 'video') clearPendingVideo();
+    }
+
+    function clearPendingPhoto() {
+      pendingPhoto = null;
+      document.getElementById('mPhotoInput').value = '';
+      var preview = document.getElementById('mPhotoPreview');
+      preview.style.display = 'none';
+      preview.removeAttribute('src');
+      document.getElementById('mMediaInfo').textContent = '';
+    }
+
+    function clearPendingVideo() {
+      pendingVideo = null;
+      document.getElementById('mVideoInput').value = '';
+      document.getElementById('mMediaInfo').textContent = '';
+    }
+
+    // ---------- 相片：canvas 壓縮 ----------
+    function mediaPhotoSelected(input) {
+      var file = input.files && input.files[0];
+      pendingPhoto = null;
+      if (!file) return;
+
+      showLoading('壓縮相片中...');
+      compressImage(file)
+        .then(function (result) {
+          if (result.bytes > PHOTO_MAX_BYTES) {
+            alert('相片壓縮後仍有 ' + formatBytes(result.bytes) + '，超過上限 ' + formatBytes(PHOTO_MAX_BYTES) + '，請重新拍攝或揀另一張。');
+            clearPendingPhoto();
+            return;
+          }
+          pendingPhoto = {
+            base64: result.base64,
+            bytes: result.bytes,
+            name: (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg'
+          };
+          var preview = document.getElementById('mPhotoPreview');
+          preview.src = result.dataUrl;
+          preview.style.display = 'block';
+          document.getElementById('mMediaInfo').textContent =
+            '已壓縮：' + result.width + '×' + result.height + '，' + formatBytes(result.bytes) +
+            '（原檔 ' + formatBytes(file.size) + '）';
+        })
+        .catch(function (err) {
+          alert(err.message);
+          clearPendingPhoto();
+        })
+        .finally(hideLoading);
+    }
+
+    function compressImage(file) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          var scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+          var w = Math.round(img.naturalWidth * scale);
+          var h = Math.round(img.naturalHeight * scale);
+
+          var canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff'; // 透明 PNG 轉 JPEG 時避免變黑底
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+
+          var result = null;
+          for (var i = 0; i < PHOTO_QUALITY_STEPS.length; i++) {
+            var dataUrl = canvas.toDataURL('image/jpeg', PHOTO_QUALITY_STEPS[i]);
+            var base64 = dataUrl.split(',')[1];
+            result = { dataUrl: dataUrl, base64: base64, bytes: base64ByteLength(base64), width: w, height: h };
+            if (result.bytes <= PHOTO_MAX_BYTES) break;
+          }
+          resolve(result);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error('無法讀取呢張相片（格式可能不支援），請改用相機直接拍攝。'));
+        };
+        img.src = url;
+      });
+    }
+
+    // ---------- 片段：大小檢查 ----------
+    function mediaVideoSelected(input) {
+      var file = input.files && input.files[0];
+      pendingVideo = null;
+      if (!file) return;
+
+      if (file.size > VIDEO_MAX_BYTES) {
+        alert('片段有 ' + formatBytes(file.size) + '，超過上限 ' + formatBytes(VIDEO_MAX_BYTES) + '，請縮短片段再試。');
+        clearPendingVideo();
+        return;
+      }
+      pendingVideo = file;
+      document.getElementById('mMediaInfo').textContent = '已揀片段：' + (file.name || 'video') + '，' + formatBytes(file.size);
+    }
+
+    // ---------- 加入 / 刪除記錄 ----------
+    function mediaAddRecord() {
+      var fields = {};
+      var hasValue = false;
+      RECORD_FIELDS.forEach(function (f) {
+        fields[f] = document.getElementById('mField_' + f).value.trim();
+        if (fields[f]) hasValue = true;
+      });
+      if (!hasValue) {
+        alert('請最少填一個欄位');
+        return;
+      }
+
+      var type = getMediaType();
+      if (type === 'photo' && !pendingPhoto) {
+        alert('請先揀相片，或者將媒體改為「無」');
+        return;
+      }
+      if (type === 'video' && !pendingVideo) {
+        alert('請先揀片段，或者將媒體改為「無」');
+        return;
+      }
+
+      mediaList.push({
+        fields: fields,
+        mediaType: type,
+        photo: type === 'photo' ? pendingPhoto : null,
+        video: type === 'video' ? pendingVideo : null,
+        videoFileId: null
+      });
+
+      // 重置表單，準備輸入下一筆
+      RECORD_FIELDS.forEach(function (f) { document.getElementById('mField_' + f).value = ''; });
+      document.querySelector('input[name="mMediaType"][value="none"]').checked = true;
+      mediaTypeChanged();
+
+      renderMediaTable();
+      setMediaStatus('✅ 已加入（共 ' + mediaList.length + ' 筆）');
+    }
+
+    function mediaDeleteItem(index) {
+      mediaList.splice(index, 1);
+      renderMediaTable();
+    }
+
+    function renderMediaTable() {
+      var tbody = document.getElementById('mTbody');
+      var hasItems = mediaList.length > 0;
+      tbody.innerHTML = '';
+      document.getElementById('mTable').style.display = hasItems ? 'table' : 'none';
+      document.getElementById('mEmptyHint').style.display = hasItems ? 'none' : 'block';
+
+      mediaList.forEach(function (item, index) {
+        var mediaText = '—';
+        if (item.mediaType === 'photo') mediaText = '📷 相片 ' + formatBytes(item.photo.bytes);
+        if (item.mediaType === 'video') mediaText = '🎬 片段 ' + formatBytes(item.video.size) + (item.videoFileId ? ' ✔已上傳' : '');
+
+        var html = '';
+        RECORD_FIELDS.forEach(function (f) { html += '<td>' + escapeHtml(item.fields[f]) + '</td>'; });
+        html += '<td>' + mediaText + '</td>' +
+          '<td><button class="del-btn" onclick="mediaDeleteItem(' + index + ')">刪除</button></td>';
+
+        var tr = document.createElement('tr');
+        tr.innerHTML = html;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('mCountBadge').textContent = mediaList.length;
+    }
+
+    // ---------- 送出 ----------
+    // 流程：1. 逐條片段上傳到 Drive（每個 request 最多一條片段，避免單次 POST 過大）
+    //       2. 將所有記錄 + 相片 base64 + 片段 fileId 一次送去 GAS 寄信（GAS 會按 25MB 分批）
+    async function mediaSendAll() {
+      var recipientInput = document.getElementById('mRecipient');
+      // 支援逗號分隔多個收件人，每個都要符合格式
+      var recipientList = recipientInput.value.split(',')
+        .map(function (a) { return a.trim(); })
+        .filter(function (a) { return a; });
+      var recipient = recipientList.join(',');
+      if (recipientList.length === 0 || !recipientList.every(function (a) { return EMAIL_REGEX.test(a); })) {
+        recipientInput.classList.add('invalid');
+        alert('收件人 Email 格式錯誤，請檢查');
+        return;
+      }
+      if (mediaList.length === 0) {
+        setMediaStatus('⚠️ 清單是空的，沒有資料可以寄送');
+        return;
+      }
+
+      var sendBtn = document.getElementById('mSendBtn');
+      sendBtn.disabled = true;
+      setMediaStatus('');
+
+      try {
+        var videos = mediaList.filter(function (r) { return r.mediaType === 'video' && !r.videoFileId; });
+        for (var i = 0; i < videos.length; i++) {
+          var rec = videos[i];
+          showLoading('上傳片段 ' + (i + 1) + ' / ' + videos.length + '（' + formatBytes(rec.video.size) + '）<br>請勿關閉頁面...');
+          var base64 = await fileToBase64(rec.video);
+          var up = await postToGas({
+            mode: 'media',
+            action: 'uploadVideo',
+            recipient: recipient,
+            recordId: rec.fields.ID,
+            fileName: rec.video.name || 'video.mp4',
+            mimeType: rec.video.type || 'video/mp4',
+            base64: base64
+          });
+          // 記低 fileId：如果之後寄信失敗，重試時唔使再上傳
+          rec.videoFileId = up.fileId;
+          renderMediaTable();
+        }
+
+        showLoading('寄送 Email 中...');
+        var result = await postToGas({
+          mode: 'media',
+          action: 'send',
+          recipient: recipient,
+          records: mediaList.map(function (r) {
+            return {
+              fields: r.fields,
+              mediaType: r.mediaType,
+              photo: r.mediaType === 'photo' ? { name: r.photo.name, base64: r.photo.base64 } : null,
+              videoFileId: r.mediaType === 'video' ? r.videoFileId : null
+            };
+          })
+        });
+
+        setMediaStatus('✅ ' + (result.message || '寄送成功') + '，清單已清空');
+        mediaList = [];
+        renderMediaTable();
+      } catch (err) {
+        setMediaStatus('❌ ' + err.message);
+      } finally {
+        hideLoading();
+        sendBtn.disabled = false;
+      }
+    }
+
+    // 媒體分頁需要讀返 GAS 回應（例如片段 fileId），所以唔用 no-cors 備援，失敗就直接報錯
+    function postToGas(payload) {
+      return fetch(GAS_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      })
+        .catch(function (err) {
+          throw new Error('無法連線或讀取伺服器回應（' + err.message + '）。如果係寄信步驟，請先檢查收件箱確認未收到再重試。');
+        })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.status !== 'success') throw new Error(data.message || '伺服器回傳錯誤');
+          return data;
+        });
+    }
+
+    // ---------- 工具 ----------
+    function fileToBase64(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(String(reader.result).split(',')[1]); };
+        reader.onerror = function () { reject(new Error('讀取檔案失敗')); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function base64ByteLength(b64) {
+      var padding = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
+      return Math.floor(b64.length * 3 / 4) - padding;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+      return Math.round(bytes / 1024) + ' KB';
+    }
+
+    function showLoading(html) {
+      document.getElementById('loadingText').innerHTML = html;
+      document.getElementById('loadingOverlay').classList.add('show');
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.remove('show');
+    }
+
+    function setMediaStatus(msg) {
+      document.getElementById('mStatus').textContent = msg;
     }
   </script>
 </body>
