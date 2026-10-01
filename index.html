@@ -200,6 +200,9 @@
       <label class="field-label" for="mRecipient">收件人 Email</label>
       <input type="text" inputmode="email" id="mRecipient" class="text-input" autocomplete="email" placeholder="留空寄去預設收件人">
       <div class="hint">可輸入其他地址（多個用逗號分隔），但必須喺授權清單內，否則會被伺服器拒絕</div>
+
+      <label class="field-label" for="mSubject">Email 標題</label>
+      <input type="text" id="mSubject" class="text-input" maxlength="150" placeholder="留空用預設標題「媒體上傳記錄」">
     </div>
 
     <!-- 新增記錄 -->
@@ -830,6 +833,7 @@
           mode: 'media',
           action: 'send',
           recipient: recipient,
+          subject: document.getElementById('mSubject').value.trim(),
           records: mediaList.map(function (r) {
             return {
               fields: r.fields,
